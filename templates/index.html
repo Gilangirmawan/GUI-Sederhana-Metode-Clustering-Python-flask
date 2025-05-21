@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K-Means Clustering App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .plot-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .preview-table {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        .loading-container {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1100;
+        }
+        #loadingSpinner {
+            width: 3rem; 
+            height: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Toast Notification -->
+    <div class="toast-container">
+        <div id="successToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-success text-white">
+                <strong class="me-auto">Sukses</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                File berhasil diupload!
+            </div>
+        </div>
+    </div>
+
+    <div class="container py-5">
+        <!-- Header dengan Nama Aplikasi -->
+        <div class="card mb-4 bg-light">
+            <div class="card-body text-center">
+                <h1 id="appTitle">Flask KMeans GUI</h1>
+                <p class="text-muted">Aplikasi K-Means Clustering dengan Flask</p>
+                <h3 class="text-muted">
+                    Nama : Gilang Irmawan<br>
+                    NIM : 42422006<br>
+                    Prodi : Informatika 2 Semester 6<br>
+                    Mata Kuliah : Data Mining
+                </h3>
+            </div>
+        </div>
+
+        <!-- Upload File Section -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5>Step 1: Upload Dataset</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <input class="form-control" type="file" id="fileInput" accept=".csv">
+                </div>
+                <button id="uploadBtn" class="btn btn-primary">
+                    <span id="uploadText">Upload CSV</span>
+                    <span id="uploadSpinner" class="spinner-border spinner-border-sm" style="display: none;"></span>
+                </button>
+                <div id="filePreview" class="mt-3 preview-table"></div>
+            </div>
+        </div>
+
+        <!-- Clustering Parameters -->
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5>Step 2: Clustering Parameters</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label for="minK" class="form-label">Minimum K:</label>
+                        <input type="number" id="minK" class="form-control" value="2" min="2">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="maxK" class="form-label">Maximum K:</label>
+                        <input type="number" id="maxK" class="form-control" value="20" min="2">
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <button id="runClusteringBtn" class="btn btn-success" disabled>
+                            <span id="runText">Run Clustering</span>
+                            <span id="runSpinner" class="spinner-border spinner-border-sm" style="display: none;"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5>Step 3: Clustering Results</h5>
+            </div>
+            <div class="card-body">
+                <div id="loadingContainer" class="loading-container">
+                    <div class="spinner-border text-primary" id="loadingSpinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Sedang memproses clustering...</p>
+                </div>
+                <div id="plotContainer" class="plot-container">
+                    <p class="text-muted text-center">Elbow plot akan muncul di sini setelah clustering.</p>
+                </div>
+                <div id="resultsTable" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Inisialisasi toast
+        const successToast = new bootstrap.Toast(document.getElementById('successToast'), {
+            autohide: true,
+            delay: 3000
+        });
+
+        // Upload File 
+        document.getElementById('uploadBtn').addEventListener('click', async function() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            const uploadBtn = document.getElementById('uploadBtn');
+            const uploadSpinner = document.getElementById('uploadSpinner');
+            const uploadText = document.getElementById('uploadText');
+            
+            if (!file) {
+                alert('Silakan pilih file CSV terlebih dahulu!');
+                return;
+            }
+
+            // Tampilkan loading spinner di tombol upload
+            uploadBtn.disabled = true;
+            uploadText.textContent = 'Mengupload...';
+            uploadSpinner.style.display = 'inline-block';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Tampilkan preview file
+                document.getElementById('filePreview').innerHTML = `
+                    <h6>File: ${data.filename}</h6>
+                    <div class="table-responsive">${data.preview}</div>
+                `;
+
+                // Aktifkan tombol clustering
+                document.getElementById('runClusteringBtn').disabled = false;
+                
+                // Tampilkan notifikasi sukses
+                successToast.show();
+                
+            } catch (error) {
+                alert('Gagal mengupload file: ' + error.message);
+                console.error('Upload error:', error);
+            } finally {
+                // Sembunyikan loading spinner di tombol upload
+                uploadBtn.disabled = false;
+                uploadText.textContent = 'Upload CSV';
+                uploadSpinner.style.display = 'none';
+            }
+        });
+
+        // Run Clustering Handler
+        document.getElementById('runClusteringBtn').addEventListener('click', async function() {
+            const minK = parseInt(document.getElementById('minK').value);
+            const maxK = parseInt(document.getElementById('maxK').value);
+            const filenameElement = document.querySelector('#filePreview h6');
+            const runBtn = document.getElementById('runClusteringBtn');
+            const runSpinner = document.getElementById('runSpinner');
+            const runText = document.getElementById('runText');
+            
+            if (!filenameElement) {
+                alert('Silakan upload file terlebih dahulu!');
+                return;
+            }
+            
+            const filename = filenameElement.textContent.replace('File: ', '').trim();
+
+            // Validasi input
+            if (minK >= maxK) {
+                alert('Minimum K harus lebih kecil dari Maximum K!');
+                return;
+            }
+
+            // Tampilkan loading spinner
+            const loadingContainer = document.getElementById('loadingContainer');
+            const plotContainer = document.getElementById('plotContainer');
+            loadingContainer.style.display = 'block';
+            plotContainer.innerHTML = '';
+            
+            // Tampilkan loading di tombol
+            runBtn.disabled = true;
+            runText.textContent = 'Memproses...';
+            runSpinner.style.display = 'inline-block';
+
+            try {
+                const response = await fetch('/cluster', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        filename: filename,
+                        min_k: minK,
+                        max_k: maxK
+                    })
+                });
+                
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Tampilkan hasil clustering
+                plotContainer.innerHTML = `
+                    <img src="data:image/png;base64,${data.plot}" class="img-fluid">
+                    <p class="text-center mt-2">Hasil Elbow Method</p>
+                `;
+
+                // Tampilkan nilai inertia
+                document.getElementById('resultsTable').innerHTML = `
+                    <div class="card">
+                        <div class="card-header">
+                            <h6>Nilai Inertia:</h6>
+                        </div>
+                        <div class="card-body">
+                            <pre class="bg-light p-3">${JSON.stringify(data.inertias, null, 2)}</pre>
+                            <p class="text-muted mt-2">Semakin kecil nilai inertia, semakin baik clustering.</p>
+                        </div>
+                    </div>
+                `;
+                
+            } catch (error) {
+                plotContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        Gagal melakukan clustering: ${error.message}
+                    </div>
+                `;
+                console.error('Clustering error:', error);
+            } finally {
+                loadingContainer.style.display = 'none';
+                runBtn.disabled = false;
+                runText.textContent = 'Run Clustering';
+                runSpinner.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
